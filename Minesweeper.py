@@ -1,160 +1,156 @@
-# Import các thư viện cần thiết
-import random
-import time
+# Nhập các thư viện cần thiết
 import selenium
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
+import numpy as np
+import time
 
-# Khởi tạo trình duyệt Microsoft edge và điều hướng đến website minesweeper
+# Khởi tạo trình duyệt edge
 driver = webdriver.Edge()
+# Mở trang web minesweeper
 driver.get("https://minesweeper.online/start/3")
+# Chờ cho trang web tải xong
+time.sleep(5)
+# Tìm nút play và nhấn vào
+play_button = driver.find_element_by_xpath("//div[@class='c-group f-align-items-center f-justify-content-center']/button")
+play_button.click()
+# Chờ cho game bắt đầu
+time.sleep(5)
+# Tìm bảng game và lấy kích thước của nó
+game_board = driver.find_element_by_xpath("//div[@class='gameBoard']")
+board_width = int(game_board.get_attribute("data-width"))
+board_height = int(game_board.get_attribute("data-height"))
+# Tạo một ma trận numpy để lưu trạng thái của các ô
+# Giá trị 0: ô chưa mở
+# Giá trị -1: ô có mìn
+# Giá trị 1-8: ô đã mở và có số mìn xung quanh tương ứng
+board_state = np.zeros((board_height, board_width), dtype=int)
+# Tạo một hàm để lấy giá trị của một ô từ bảng game
+def get_cell_value(row, col):
+    # Tìm phần tử div tương ứng với ô (row, col)
+    cell = game_board.find_element_by_xpath(f".//div[@data-row='{row}'][@data-col='{col}']")
+    # Lấy class của phần tử div
+    cell_class = cell.get_attribute("class")
+    # Nếu class chứa "blank", tức là ô chưa mở, trả về 0
+    if "blank" in cell_class:
+        return 0
+    # Nếu class chứa "bombflagged", tức là ô có mìn, trả về -1
+    elif "bombflagged" in cell_class:
+        return -1
+    # Nếu class chứa "open", tức là ô đã mở, lấy số mìn xung quanh từ thuộc tính data-mine-count và trả về giá trị tương ứng
+    elif "open" in cell_class:
+        mine_count = int(cell.get_attribute("data-mine-count"))
+        return mine_count
+    # Nếu không thuộc các trường hợp trên, trả về None
+    else:
+        return None
 
-# Tìm phần tử HTML chứa bảng minesweeper và lấy kích thước của nó
-board = driver.find_element(By.ID, "game")
-rows = int(board.get_attribute("data-rows"))
-cols = int(board.get_attribute("data-cols"))
+# Tạo một hàm để nhấn vào một ô trên bảng game
+def click_cell(row, col):
+    # Tìm phần tử div tương ứng với ô (row, col)
+    cell = game_board.find_element_by_xpath(f".//div[@data-row='{row}'][@data-col='{col}']")
+    # Nhấn vào phần tử div
+    cell.click()
 
-# Khởi tạo một ma trận để lưu trạng thái của các ô trong bảng minesweeper
-# 0: ô chưa được mở, 1: ô đã được mở, -1: ô có cờ đánh dấu là bom
-state = [[0 for j in range(cols)] for i in range(rows)]
+# Tạo một hàm để cập nhật ma trận board_state từ bảng game
+def update_board_state():
+    # Duyệt qua từng ô trong ma trận board_state
+    for i in range(board_height):
+        for j in range(board_width):
+            # Lấy giá trị của ô từ bảng game
+            cell_value = get_cell_value(i, j)
+            # Nếu giá trị khác None, cập nhật vào ma trận board_state
+            if cell_value is not None:
+                board_state[i][j] = cell_value
 
-# Hàm để lấy số bom xung quanh một ô đã được mở
-def get_bombs(i,j):
-  cell = board.find_element_by_xpath(f"//div[@id='game']/div[{i+1}]/div[{j+1}]")
-  if cell.get_attribute("class") == "open0":
-    return 0
-  else:
-    return int(cell.text)
-
-# Hàm để kiểm tra xem một ô có phải là bom hay không
-def is_bomb(i,j):
-  cell = board.find_element_by_xpath(f"//div[@id='game']/div[{i+1}]/div[{j+1}]")
-  return cell.get_attribute("class") == "bombflagged"
-
-# Hàm để kiểm tra xem một ô có phải là biên của bảng hay không
-def is_edge(i,j):
-  return i == 0 or i == rows-1 or j == 0 or j == cols-1
-
-# Hàm để kiểm tra xem game đã kết thúc hay chưa
+# Tạo một hàm để kiểm tra xem game đã kết thúc hay chưa
 def is_game_over():
-  face = driver.find_element_by_id("face")
-  return face.get_attribute("class") != "facesmile"
+    # Tìm phần tử div có id là "face"
+    face = driver.find_element_by_id("face")
+    # Lấy class của phần tử div
+    face_class = face.get_attribute("class")
+    # Nếu class chứa "facedead" hoặc "facewin", tức là game đã kết thúc, trả về True
+    if "facedead" in face_class or "facewin" in face_class:
+        return True
+    # Nếu không, trả về False
+    else:
+        return False
 
-# Hàm để click vào một ô trong bảng minesweeper với chuột trái hoặc chuột phải
-def click_cell(i,j,right=False):
-  cell = board.find_element_by_xpath(f"//div[@id='game']/div[{i+1}]/div[{j+1}]")
-  if right:
-    # Click chuột phải để đánh dấu cờ cho ô có bom
-    cell.click()
-    state[i][j] = -1 # Cập nhật trạng thái của ô là -1 (có cờ)
-    print(f"Marked bomb at ({i},{j})")
-  else:
-    # Click chuột trái để mở ô không có bom 
-    cell.click()
-    state[i][j] = 1 # Cập nhật trạng thái của ô là 1 (đã mở)
-    print(f"Opened cell at ({i},{j})")
+# Tạo một hàm để tìm các ô an toàn và các ô có mìn dựa trên ma trận board_state
+def find_safe_and_mine_cells():
+    # Tạo hai tập hợp để lưu các ô an toàn và các ô có mìn
+    safe_cells = set()
+    mine_cells = set()
+    # Duyệt qua từng ô trong ma trận board_state
+    for i in range(board_height):
+        for j in range(board_width):
+            # Nếu ô có giá trị từ 1 đến 8, tức là ô đã mở và có số mìn xung quanh
+            if board_state[i][j] in range(1, 9):
+                # Đếm số ô chưa mở xung quanh ô hiện tại
+                unknown_count = 0
+                # Đếm số ô có mìn xung quanh ô hiện tại
+                mine_count = 0
+                # Tạo một danh sách để lưu các ô chưa mở xung quanh ô hiện tại
+                unknown_cells = []
+                # Duyệt qua các ô lân cận của ô hiện tại
+                for di in [-1, 0, 1]:
+                    for dj in [-1, 0, 1]:
+                        # Bỏ qua nếu là ô hiện tại hoặc ngoài phạm vi của bảng game
+                        if di == 0 and dj == 0:
+                            continue
+                        if i + di < 0 or i + di >= board_height:
+                            continue
+                        if j + dj < 0 or j + dj >= board_width:
+                            continue
+                        # Nếu ô lân cận có giá trị là 0, tức là chưa mở, tăng biến unknown_count và thêm vào danh sách unknown_cells
+                        if board_state[i + di][j + dj] == 0:
+                            unknown_count += 1
+                            unknown_cells.append((i + di, j + dj))
+                        # Nếu ô lân cận có giá trị là -1, tức là có mìn, tăng biến mine_count
+                        elif board_state[i + di][j + dj] == -1:
+                            mine_count += 1
+                # Nếu số ô chưa mở bằng số mìn còn lại xung quanh ô hiện tại, tức là tất cả các ô chưa mở đều có mìn, thêm vào tập hợp mine_cells
+                if unknown_count == board_state[i][j] - mine_count:
+                    for cell in unknown_cells:
+                        mine_cells.add(cell)
+                # Nếu số mìn còn lại xung quanh ô hiện tại bằng 0, tức là tất cả các ô chưa mở đều an toàn, thêm vào tập hợp safe_cells
+                elif board_state[i][j] - mine_count == 0:
+                    for cell in unknown_cells:
+                        safe_cells.add(cell)
+    # Trả về hai tập hợp safe_cells và mine_cells
+    return safe_cells, mine_cells
 
-# Hàm để áp dụng các luật logic để giải quyết bài toán minesweeper 
-def solve():
-  
-  # Biến để lưu số lượng các nước đi hợp lý được tìm ra trong mỗi vòng lặp 
-  moves = 0
+# Tạo một hàm để chơi game
+def play_game():
+    # Cập nhật ma trận board_state từ bảng game
+    update_board_state()
+    # Lặp cho đến khi game kết thúc
+    while not is_game_over():
+        # Tìm các ô an toàn và các ô có mìn từ ma trận board_state
+        safe_cells, mine_cells = find_safe_and_mine_cells()
+        # Nếu có ô an toàn, nhấn vào một ô an toàn ngẫu nhiên
+        if safe_cells:
+            safe_cell = safe_cells.pop()
+            click_cell(*safe_cell)
+        # Nếu không có ô an toàn nhưng có ô có mìn, đánh dấu tất cả các ô có mìn
+        elif mine_cells:
+            for mine_cell in mine_cells:
+                click_cell(*mine_cell)
+        # Nếu không có ô an toàn và không có ô có mìn, nhấn vào một ô chưa mở ngẫu nhiên
+        else:
+            unknown_cells = np.argwhere(board_state == 0)
+            random_cell = unknown_cells[np.random.choice(len(unknown_cells))]
+            click_cell(*random_cell)
+        # Cập nhật ma trận board_state từ bảng game
+        update_board_state()
+    # In kết quả game
+    if is_game_over():
+        face = driver.find_element_by_id("face")
+        face_class = face.get_attribute("class")
+        if "facedead" in face_class:
+            print("Bạn đã thua!")
+        elif "facewin" in face_class:
+            print("Bạn đã thắng!")
 
-  # Duyệt qua từng ô trong bảng minesweeper 
-  for i in range(rows):
-    for j in range(cols):
-
-      # Nếu ô đã được mở và có số bom xung quanh khác 0
-      if state[i][j] == 1 and get_bombs(i,j) > 0:
-
-        # Đếm số lượng các ô chưa được mở xung quanh ô đó
-        unknown = 0
-        for di in [-1,0,1]:
-          for dj in [-1,0,1]:
-            if di == 0 and dj == 0:
-              continue
-            ni = i + di
-            nj = j + dj
-            if ni >= 0 and ni < rows and nj >= 0 and nj < cols and state[ni][nj] == 0:
-              unknown += 1
-        
-        # Nếu số lượng các ô chưa được mở bằng số bom xung quanh ô đó
-        if unknown == get_bombs(i,j):
-
-          # Đánh dấu cờ cho tất cả các ô chưa được mở xung quanh ô đó 
-          for di in [-1,0,1]:
-            for dj in [-1,0,1]:
-              if di == 0 and dj == 0:
-                continue
-              ni = i + di
-              nj = j + dj
-              if ni >= 0 and ni < rows and nj >= 0 and nj < cols and state[ni][nj] == 0:
-                click_cell(ni,nj,right=True)
-                moves += 1
-
-      # Nếu ô đã được mở và có số bom xung quanh khác 0 
-      elif state[i][j] == -1:
-
-        # Đếm số lượng các ô có cờ xung quanh ô đó 
-        flags = 0
-        for di in [-1,0,1]:
-          for dj in [-1,0,1]:
-            if di == 0 and dj == 0:
-              continue
-            ni = i + di
-            nj = j + dj
-            if ni >= 0 and ni < rows and nj >= 0 and nj < cols and is_bomb(ni,nj):
-              flags += 1
-        
-        # Nếu số lượng các ô có cờ bằng số bom xung quanh ô đó 
-        if flags == get_bombs(i,j):
-
-          # Mở tất cả các ô không có cờ xung quanh ô đó 
-          for di in [-1,0,1]:
-            for dj in [-1,0,1]:
-              if di == 0 and dj == 0:
-                continue
-              ni = i + di
-              nj = j + dj
-              if ni >= 0 and ni < rows and nj >= 0 and nj < cols and state[ni][nj] != -1:
-                click_cell(ni,nj)
-                moves += 1
-
-  # Trả về số lượng các nước đi hợp lý được tìm ra trong mỗi vòng lặp 
-  return moves
-
-# Hàm để chọn một ô ngẫu nhiên để bắt đầu game hoặc khi không có nước đi hợp lý nào 
-def random_move():
-  i = random.randint(0,rows-1)
-  j = random.randint(0,cols-1)
-  while state[i][j] != 0:
-    i = random.randint(0,rows-1)
-    j = random.randint(0,cols-1)
-  click_cell(i,j)
-
-# Bắt đầu game bằng cách click vào một ô ngẫu nhiên 
-random_move()
-
-# Lặp lại cho đến khi game kết thúc 
-while not is_game_over():
-  
-  # Áp dụng các luật logic để giải quyết bài toán minesweeper 
-  moves = solve()
-
-  # Nếu không có nước đi hợp lý nào được tìm ra 
-  if moves == 0:
-
-    # Chọn một ô ngẫu nhiên để tiếp tục game 
-    random_move()
-  
-  # Đợi một giây trước khi thực hiện nước đi tiếp theo 
-  time.sleep(1)
-
-# In kết quả của game 
-if is_game_over():
-  face = driver.find_element_by_id("face")
-  if face.get_attribute("class") == "facedead":
-    print("Game over. You lose.")
-  elif face.get_attribute("class") == "facewin":
-    print("Game over. You win.")
+# Gọi hàm chơi game
+play_game()
